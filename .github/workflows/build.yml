@@ -22,6 +22,18 @@ jobs:
           chmod +x make.sh
           ./make.sh
 
+      - name: Fix Swift Syntax Errors
+        run: |
+          python3 -c '
+          with open("App/MapHomeView.swift", "r", encoding="utf-8") as f: c = f.read()
+          c = c.replace("finish failed:\\(errMsg ?? \"VPN start failed\")", "finish failed:\\(errMsg ?? \"VPN start failed\")\"")
+          c = c.replace("finish failed:\\(errMsg ?? \"VPN reconnect failed\")", "finish failed:\\(errMsg ?? \"VPN reconnect failed\")\"")
+          with open("App/MapHomeView.swift", "w", encoding="utf-8") as f: f.write(c)
+          with open("App/SettingsView.swift", "r", encoding="utf-8") as f: c = f.read()
+          c = c.replace("Run \"Set as Location\" once", "Run \\\"Set as Location\\\" once")
+          with open("App/SettingsView.swift", "w", encoding="utf-8") as f: f.write(c)
+          '
+
       - name: Fix Xcode Project Settings
         run: |
           export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
