@@ -46,7 +46,6 @@ jobs:
           sed -i '' '/DEVELOPMENT_TEAM/d' project.yml
           sed -i '' '/CODE_SIGN_ENTITLEMENTS/d' project.yml
           sed -i '' 's/codeSign: true/codeSign: false/g' project.yml
-          sed -i '' 's/"18.0"/"17.0"/g' project.yml
           
           xcodegen generate
 
