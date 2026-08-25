@@ -24,11 +24,9 @@ jobs:
 
       - name: Fix Xcode Project Settings
         run: |
-          # Bypass GitHub's new Homebrew trust issues
           export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
           brew install xcodegen
           
-          # Nuke the author's code signing AND VPN entitlements
           sed -i '' 's/CODE_SIGN_STYLE: Manual/CODE_SIGN_STYLE: Automatic/g' project.yml
           sed -i '' '/CODE_SIGN_IDENTITY/d' project.yml
           sed -i '' '/PROVISIONING_PROFILE_SPECIFIER/d' project.yml
@@ -37,11 +35,15 @@ jobs:
           sed -i '' 's/codeSign: true/codeSign: false/g' project.yml
           sed -i '' 's/"18.0"/"17.0"/g' project.yml
           
-          # Regenerate the Xcode project file cleanly
           xcodegen generate
 
       - name: Build Xcode Project
         run: |
+          brew install xcbeautify
+          set -o pipefail
+          
+          xcodebuild -resolvePackageDependencies -project location-spoofer.xcodeproj -scheme location-spoofer
+          
           xcodebuild build \
             -project location-spoofer.xcodeproj \
             -scheme location-spoofer \
@@ -50,7 +52,7 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+            CODE_SIGN_IDENTITY="" | xcbeautify
 
       - name: Package IPA
         run: |
