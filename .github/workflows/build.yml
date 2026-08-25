@@ -22,17 +22,22 @@ jobs:
           chmod +x make.sh
           ./make.sh
 
-      - name: Fix Swift Syntax Errors
+      - name: Fix Code & Bypass App Group Sandbox
         run: |
           python3 -c '
           with open("App/MapHomeView.swift", "r", encoding="utf-8") as f: c = f.read()
           c = c.replace("finish failed:\\(errMsg ?? \"VPN start failed\")", "finish failed:\\(errMsg ?? \"VPN start failed\")\")")
           c = c.replace("finish failed:\\(errMsg ?? \"VPN reconnect failed\")", "finish failed:\\(errMsg ?? \"VPN reconnect failed\")\")")
+          c = c.replace("try manager.connection.startVPNTunnel()", "let opts: [String: NSObject] = [\"lat\": NSNumber(value: expectedLat), \"lon\": NSNumber(value: expectedLon)]; try manager.connection.startVPNTunnel(options: opts)")
           with open("App/MapHomeView.swift", "w", encoding="utf-8") as f: f.write(c)
           
           with open("App/SettingsView.swift", "r", encoding="utf-8") as f: c = f.read()
           c = c.replace("Run \"Set as Location\" once", "Run \\\"Set as Location\\\" once")
           with open("App/SettingsView.swift", "w", encoding="utf-8") as f: f.write(c)
+
+          with open("Tunnel/PacketTunnelProvider.swift", "r", encoding="utf-8") as f: c = f.read()
+          c = c.replace("let coords = configuration.currentCoordinates\n        let lat = coords?.latitude\n        let lon = coords?.longitude", "var lat = configuration.currentCoordinates?.latitude\n        var lon = configuration.currentCoordinates?.longitude\n        if let opts = options, let oLat = opts[\"lat\"] as? NSNumber, let oLon = opts[\"lon\"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }")
+          with open("Tunnel/PacketTunnelProvider.swift", "w", encoding="utf-8") as f: f.write(c)
           '
 
       - name: Fix Xcode Project Settings
@@ -66,8 +71,14 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" | xcbeautify
 
-      - name: Package IPA
+      - name: Inject VPN Entitlements & Package IPA
         run: |
+          brew install ldid
+          
+          # Force the Network Extension permissions directly into the compiled binaries
+          ldid -S"Resources/location-spoofer.entitlements" build/Build/Products/Release-iphoneos/location-spoofer.app/location-spoofer
+          ldid -S"Tunnel/location-spoofer-tunnel.entitlements" build/Build/Products/Release-iphoneos/location-spoofer.app/PlugIns/location-spoofer-tunnel.appex/location-spoofer-tunnel
+          
           mkdir Payload
           cp -r build/Build/Products/Release-iphoneos/location-spoofer.app Payload/
           zip -r location-spoofer.ipa Payload
