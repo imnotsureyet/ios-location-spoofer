@@ -8,18 +8,35 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: false
 
       - name: Build GoSpoofer
         run: |
           cd GoSpoofer
           chmod +x make.sh
           ./make.sh
+
+      - name: Fix Xcode Project Settings
+        run: |
+          # Remove the author's hardcoded developer team and code signing profiles
+          sed -i '' 's/CODE_SIGN_STYLE: Manual/CODE_SIGN_STYLE: Automatic/g' project.yml
+          sed -i '' '/CODE_SIGN_IDENTITY/d' project.yml
+          sed -i '' '/PROVISIONING_PROFILE_SPECIFIER/d' project.yml
+          sed -i '' '/DEVELOPMENT_TEAM/d' project.yml
+          sed -i '' 's/codeSign: true/codeSign: false/g' project.yml
+          
+          # Lower deployment target from iOS 18.0 to iOS 17.0 for better compatibility
+          sed -i '' 's/"18.0"/"17.0"/g' project.yml
+          
+          # Regenerate the Xcode project file cleanly
+          brew install xcodegen
+          xcodegen generate
 
       - name: Build Xcode Project
         run: |
@@ -31,8 +48,7 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE_SPECIFIER=""
+            CODE_SIGN_IDENTITY=""
 
       - name: Package IPA
         run: |
