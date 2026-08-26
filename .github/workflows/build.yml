@@ -69,9 +69,9 @@ jobs:
               r"self\.userDefaults = defaults",
               'self.userDefaults = UserDefaults.standard')
           
-          # Read coords from memory in PacketTunnelProvider
+          # Read coords from memory in PacketTunnelProvider and aggressively garbage collect
           packet_tunnel_repl = (
-              "var lat = configuration.currentCoordinates?.latitude\n"
+              "setenv(\"GOGC\", \"20\", 1)\n        var lat = configuration.currentCoordinates?.latitude\n"
               "        var lon = configuration.currentCoordinates?.longitude\n"
               "        if let opts = options {\n"
               "            if let oLat = opts[\"lat\"] as? NSNumber, let oLon = opts[\"lon\"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }\n"
@@ -81,6 +81,11 @@ jobs:
           patch("Tunnel/PacketTunnelProvider.swift",
               r"let coords = configuration\.currentCoordinates\s+let lat = coords\?\.latitude\s+let lon = coords\?\.longitude",
               packet_tunnel_repl)
+          
+          # Force kill extension on stop to free the port for the next start!
+          patch("Tunnel/PacketTunnelProvider.swift",
+              r"goLocationSpoofer = nil\n\s+completionHandler\(\)\n    \}",
+              "goLocationSpoofer = nil\n        completionHandler()\n        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }\n    }")
           
           # Patch GoLocationSpoofer to use the standard UserDefaults instead of App Group
           patch("Tunnel/GoLocationSpoofer.swift",
