@@ -43,7 +43,7 @@ jobs:
               try: patch(path, pattern, repl, flags)
               except: pass
           
-          # Fix syntax errors in map views
+          # Fix syntax errors in map views (These existed in the original repo!)
           try_patch("App/SettingsView.swift", r'Run "Set as Location" once', r'Run \"Set as Location\" once')
           
           with open("App/MapHomeView.swift", 'r', encoding='utf-8') as f:
@@ -58,15 +58,6 @@ jobs:
           )
           with open("App/MapHomeView.swift", 'w', encoding='utf-8') as f:
               f.write(c)
-          
-          # Bypass ALL IPC checks since Signulous breaks Apple's IPC entitlement!
-          patch("App/MapHomeView.swift",
-              r"private func confirmCoordsReady\(expectedLat: Double, expectedLon: Double, timeout: TimeInterval, completion: @escaping \(Bool\) -> Void\) \{",
-              r"private func confirmCoordsReady(expectedLat: Double, expectedLon: Double, timeout: TimeInterval, completion: @escaping (Bool) -> Void) {\n        completion(true); return")
-              
-          patch("App/MapHomeView.swift",
-              r"private func probeGoProxyReady\(timeout: TimeInterval, completion: @escaping \(Bool\) -> Void\) \{",
-              r"private func probeGoProxyReady(timeout: TimeInterval, completion: @escaping (Bool) -> Void) {\n        completion(true); return")
           
           # Pass coords via memory to bypass sandbox
           patch("App/MapHomeView.swift", 
@@ -96,17 +87,22 @@ jobs:
               packet_tunnel_repl)
           
           # Force close Go HTTP Server on stop to free port 8888 for the next rapid restart!
-          patch("GoSpoofer/main.go",
-              r"var globalCACert \*tls\.Certificate",
-              "var globalServer *http.Server\nvar globalCACert *tls.Certificate")
-          
-          patch("GoSpoofer/main.go",
-              r"h := cgo\.NewHandle\(srv\)",
-              "h := cgo.NewHandle(srv)\n\tglobalServer = srv")
-              
-          patch("GoSpoofer/main.go",
-              r"func golocationspoofer_stopproxy\(h C\.uintptr_t\) C\.int \{",
-              "func golocationspoofer_stopproxy(h C.uintptr_t) C.int {\n\tif globalServer != nil {\n\t\tglobalServer.Close()\n\t}")
+          with open("GoSpoofer/main.go", 'r', encoding='utf-8') as f:
+              c = f.read()
+          c = c.replace(
+              "var globalCACert *tls.Certificate",
+              "var globalServer *http.Server\nvar globalCACert *tls.Certificate"
+          )
+          c = c.replace(
+              "h := cgo.NewHandle(srv)",
+              "h := cgo.NewHandle(srv)\n\tglobalServer = srv"
+          )
+          c = c.replace(
+              "func golocationspoofer_stopproxy(h C.uintptr_t) C.int {",
+              "func golocationspoofer_stopproxy(h C.uintptr_t) C.int {\n\tif globalServer != nil {\n\t\tglobalServer.Close()\n\t}"
+          )
+          with open("GoSpoofer/main.go", 'w', encoding='utf-8') as f:
+              f.write(c)
           
           # Fallback: also force kill the extension on stop just in case
           patch("Tunnel/PacketTunnelProvider.swift",
