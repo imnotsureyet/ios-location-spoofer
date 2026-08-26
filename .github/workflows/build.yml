@@ -42,7 +42,7 @@ jobs:
               try: patch(path, pattern, repl)
               except: pass
           
-          # Fix syntax errors in map views (if they still exist)
+          # Fix syntax errors in map views
           try_patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN start failed"\)', r'finish failed:\(errMsg ?? "VPN start failed")")')
           try_patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN reconnect failed"\)', r'finish failed:\(errMsg ?? "VPN reconnect failed")")')
           try_patch("App/SettingsView.swift", r'Run "Set as Location" once', r'Run \"Set as Location\" once')
@@ -66,9 +66,11 @@ jobs:
               'let userDefaults = UserDefaults.standard')
           
           # Read coords from memory
-          packet_tunnel_repl = """var lat = configuration.currentCoordinates?.latitude
-        var lon = configuration.currentCoordinates?.longitude
-        if let opts = options, let oLat = opts["lat"] as? NSNumber, let oLon = opts["lon"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }"""
+          packet_tunnel_repl = (
+              "var lat = configuration.currentCoordinates?.latitude\n"
+              "        var lon = configuration.currentCoordinates?.longitude\n"
+              "        if let opts = options, let oLat = opts[\"lat\"] as? NSNumber, let oLon = opts[\"lon\"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }"
+          )
           
           patch("Tunnel/PacketTunnelProvider.swift",
               r"let coords = configuration\.currentCoordinates\s+let lat = coords\?\.latitude\s+let lon = coords\?\.longitude",
