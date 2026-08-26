@@ -22,23 +22,54 @@ jobs:
           chmod +x make.sh
           ./make.sh
 
-      - name: Fix Code & Bypass App Group Sandbox
+      - name: Nuke App Group & Patch Source Code
         run: |
-          python3 -c '
-          with open("App/MapHomeView.swift", "r", encoding="utf-8") as f: c = f.read()
-          c = c.replace("finish failed:\\(errMsg ?? \"VPN start failed\")", "finish failed:\\(errMsg ?? \"VPN start failed\")\")")
-          c = c.replace("finish failed:\\(errMsg ?? \"VPN reconnect failed\")", "finish failed:\\(errMsg ?? \"VPN reconnect failed\")\")")
-          c = c.replace("try manager.connection.startVPNTunnel()", "let opts: [String: NSObject] = [\"lat\": NSNumber(value: expectedLat), \"lon\": NSNumber(value: expectedLon)]; try manager.connection.startVPNTunnel(options: opts)")
-          with open("App/MapHomeView.swift", "w", encoding="utf-8") as f: f.write(c)
+          cat << 'EOF' > patch.py
+          import re
           
-          with open("App/SettingsView.swift", "r", encoding="utf-8") as f: c = f.read()
-          c = c.replace("Run \"Set as Location\" once", "Run \\\"Set as Location\\\" once")
-          with open("App/SettingsView.swift", "w", encoding="utf-8") as f: f.write(c)
-
-          with open("Tunnel/PacketTunnelProvider.swift", "r", encoding="utf-8") as f: c = f.read()
-          c = c.replace("let coords = configuration.currentCoordinates\n        let lat = coords?.latitude\n        let lon = coords?.longitude", "var lat = configuration.currentCoordinates?.latitude\n        var lon = configuration.currentCoordinates?.longitude\n        if let opts = options, let oLat = opts[\"lat\"] as? NSNumber, let oLon = opts[\"lon\"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }")
-          with open("Tunnel/PacketTunnelProvider.swift", "w", encoding="utf-8") as f: f.write(c)
-          '
+          def patch(path, pattern, repl):
+              with open(path, 'r', encoding='utf-8') as f:
+                  c = f.read()
+              new_c = re.sub(pattern, repl, c, flags=re.MULTILINE)
+              if new_c == c:
+                  print(f"FAILED to patch {path}: pattern not found!")
+                  exit(1)
+              with open(path, 'w', encoding='utf-8') as f:
+                  f.write(new_c)
+              print(f"Successfully patched {path}")
+          
+          # Fix syntax errors in map views
+          try:
+              patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN start failed"\)', r'finish failed:\(errMsg ?? "VPN start failed")")')
+              patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN reconnect failed"\)', r'finish failed:\(errMsg ?? "VPN reconnect failed")")')
+              patch("App/SettingsView.swift", r'Run "Set as Location" once', r'Run \"Set as Location\" once')
+          except:
+              pass # Ignore if already fixed
+          
+          # Pass coords via memory to bypass sandbox
+          patch("App/MapHomeView.swift", 
+              r"try manager\.connection\.startVPNTunnel\(\)", 
+              r"let opts: [String: NSObject] = [\"lat\": NSNumber(value: expectedLat), \"lon\": NSNumber(value: expectedLon)]; try manager.connection.startVPNTunnel(options: opts)")
+          
+          # Remove App Group forced-unwrap crash in LocationConfiguration
+          patch("App/LocationConfiguration.swift",
+              r"guard let defaults = UserDefaults\(suiteName: suiteName\) else \{",
+              r"if false {")
+          patch("App/LocationConfiguration.swift",
+              r"self\.userDefaults = defaults",
+              r"self.userDefaults = UserDefaults.standard")
+          
+          # Remove App Group forced-unwrap crash in GoSpoofer
+          patch("Tunnel/GoLocationSpoofer.swift",
+              r"let userDefaults = UserDefaults\(suiteName: \"group\.dev\.duti\.location-spoofer\"\)\!",
+              r"let userDefaults = UserDefaults.standard")
+          
+          # Read coords from memory
+          patch("Tunnel/PacketTunnelProvider.swift",
+              r"let coords = configuration\.currentCoordinates\s+let lat = coords\?\.latitude\s+let lon = coords\?\.longitude",
+              r"var lat = configuration.currentCoordinates?.latitude\n        var lon = configuration.currentCoordinates?.longitude\n        if let opts = options, let oLat = opts[\"lat\"] as? NSNumber, let oLon = opts[\"lon\"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }")
+          EOF
+          python3 patch.py
 
       - name: Fix Xcode Project Settings
         run: |
@@ -75,7 +106,6 @@ jobs:
         run: |
           brew install ldid
           
-          # Force the Network Extension permissions directly into the compiled binaries
           ldid -S"Resources/location-spoofer.entitlements" build/Build/Products/Release-iphoneos/location-spoofer.app/location-spoofer
           ldid -S"Tunnel/location-spoofer-tunnel.entitlements" build/Build/Products/Release-iphoneos/location-spoofer.app/PlugIns/location-spoofer-tunnel.appex/location-spoofer-tunnel
           
