@@ -82,18 +82,18 @@ jobs:
               r"let coords = configuration\.currentCoordinates\s+let lat = coords\?\.latitude\s+let lon = coords\?\.longitude",
               packet_tunnel_repl)
           
-          # Force close Go listener on stop to free port 8888 for the next rapid restart!
+          # Force close Go HTTP Server on stop to free port 8888 for the next rapid restart!
           patch("GoSpoofer/main.go",
               r"var globalCACert \*tls\.Certificate",
-              "var globalListener net.Listener\nvar globalCACert *tls.Certificate")
+              "var globalServer *http.Server\nvar globalCACert *tls.Certificate")
           
           patch("GoSpoofer/main.go",
-              r"listener, err := net\.Listen\(\"tcp\", \"127\.0\.0\.1:8888\"\)",
-              "listener, err := net.Listen(\"tcp\", \"127.0.0.1:8888\")\n\tglobalListener = listener")
+              r"h := cgo\.NewHandle\(srv\)",
+              "h := cgo.NewHandle(srv)\n\tglobalServer = srv")
               
           patch("GoSpoofer/main.go",
               r"func golocationspoofer_stopproxy\(h C\.uintptr_t\) C\.int \{",
-              "func golocationspoofer_stopproxy(h C.uintptr_t) C.int {\n\tif globalListener != nil {\n\t\tglobalListener.Close()\n\t}")
+              "func golocationspoofer_stopproxy(h C.uintptr_t) C.int {\n\tif globalServer != nil {\n\t\tglobalServer.Close()\n\t}")
           
           # Fallback: also force kill the extension on stop just in case
           patch("Tunnel/PacketTunnelProvider.swift",
