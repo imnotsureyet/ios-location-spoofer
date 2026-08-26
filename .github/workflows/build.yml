@@ -46,6 +46,19 @@ jobs:
           # Fix syntax errors in map views
           try_patch("App/SettingsView.swift", r'Run "Set as Location" once', r'Run \"Set as Location\" once')
           
+          with open("App/MapHomeView.swift", 'r', encoding='utf-8') as f:
+              c = f.read()
+          c = c.replace(
+              'DiagLog.add("[cold-start] finish failed:\\(errMsg ?? "VPN start failed")',
+              'DiagLog.add("[cold-start] finish failed:\\(errMsg ?? "VPN start failed")")'
+          )
+          c = c.replace(
+              'DiagLog.add("[hot-restart] finish failed:\\(errMsg ?? "VPN reconnect failed")',
+              'DiagLog.add("[hot-restart] finish failed:\\(errMsg ?? "VPN reconnect failed")")'
+          )
+          with open("App/MapHomeView.swift", 'w', encoding='utf-8') as f:
+              f.write(c)
+          
           # Bypass ALL IPC checks since Signulous breaks Apple's IPC entitlement!
           patch("App/MapHomeView.swift",
               r"private func confirmCoordsReady\(expectedLat: Double, expectedLon: Double, timeout: TimeInterval, completion: @escaping \(Bool\) -> Void\) \{",
