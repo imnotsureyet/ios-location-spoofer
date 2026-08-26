@@ -26,6 +26,7 @@ jobs:
         run: |
           cat << 'EOF' > patch.py
           import re
+          import os
           
           def patch(path, pattern, repl, flags=re.MULTILINE):
               with open(path, 'r', encoding='utf-8') as f:
@@ -43,8 +44,6 @@ jobs:
               except: pass
           
           # Fix syntax errors in map views
-          try_patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN start failed"\)', r'finish failed:\(errMsg ?? "VPN start failed")")')
-          try_patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN reconnect failed"\)', r'finish failed:\(errMsg ?? "VPN reconnect failed")")')
           try_patch("App/SettingsView.swift", r'Run "Set as Location" once', r'Run \"Set as Location\" once')
           
           # Bypass ALL IPC checks since Signulous breaks Apple's IPC entitlement!
@@ -61,13 +60,14 @@ jobs:
               r"try manager\.connection\.startVPNTunnel\(\)", 
               'let opts: [String: NSObject] = ["lat": NSNumber(value: expectedLat), "lon": NSNumber(value: expectedLon)]; try manager.connection.startVPNTunnel(options: opts)')
           
-          # Remove App Group forced-unwrap crash in LocationConfiguration
-          patch("App/LocationConfiguration.swift",
-              r"guard let defaults = UserDefaults\(suiteName: suiteName\) else \{",
-              'if false {')
-          patch("App/LocationConfiguration.swift",
-              r"self\.userDefaults = defaults",
-              'self.userDefaults = UserDefaults.standard')
+          # Remove App Group forced-unwrap crash in BOTH LocationConfiguration files
+          for path in ["App/LocationConfiguration.swift", "Tunnel/LocationConfiguration.swift"]:
+              patch(path,
+                  r"guard let defaults = UserDefaults\(suiteName: suiteName\) else \{",
+                  'if false {')
+              patch(path,
+                  r"self\.userDefaults = defaults",
+                  'self.userDefaults = UserDefaults.standard')
           
           # Read coords from memory in PacketTunnelProvider and aggressively garbage collect
           packet_tunnel_repl = (
@@ -82,10 +82,23 @@ jobs:
               r"let coords = configuration\.currentCoordinates\s+let lat = coords\?\.latitude\s+let lon = coords\?\.longitude",
               packet_tunnel_repl)
           
-          # Force kill extension on stop to free the port for the next start!
+          # Force close Go listener on stop to free port 8888 for the next rapid restart!
+          patch("GoSpoofer/main.go",
+              r"var \(\n\tglobalCACert \*tls\.Certificate",
+              "var (\n\tglobalListener net.Listener\n\tglobalCACert *tls.Certificate")
+          
+          patch("GoSpoofer/main.go",
+              r"listener, err := net\.Listen\(\"tcp\", \"127\.0\.0\.1:8888\"\)",
+              "listener, err := net.Listen(\"tcp\", \"127.0.0.1:8888\")\n\tglobalListener = listener")
+              
+          patch("GoSpoofer/main.go",
+              r"func golocationspoofer_stopproxy\(h C\.uintptr_t\) C\.int \{",
+              "func golocationspoofer_stopproxy(h C.uintptr_t) C.int {\n\tif globalListener != nil {\n\t\tglobalListener.Close()\n\t}")
+          
+          # Fallback: also force kill the extension on stop just in case
           patch("Tunnel/PacketTunnelProvider.swift",
               r"goLocationSpoofer = nil\n\s+completionHandler\(\)\n    \}",
-              "goLocationSpoofer = nil\n        completionHandler()\n        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }\n    }")
+              "goLocationSpoofer = nil\n        completionHandler()\n        exit(0)\n    }")
           
           # Patch GoLocationSpoofer to use the standard UserDefaults instead of App Group
           patch("Tunnel/GoLocationSpoofer.swift",
