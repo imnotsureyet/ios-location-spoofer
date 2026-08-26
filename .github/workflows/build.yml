@@ -37,37 +37,42 @@ jobs:
               with open(path, 'w', encoding='utf-8') as f:
                   f.write(new_c)
               print(f"Successfully patched {path}")
+              
+          def try_patch(path, pattern, repl):
+              try: patch(path, pattern, repl)
+              except: pass
           
-          # Fix syntax errors in map views
-          try:
-              patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN start failed"\)', r'finish failed:\(errMsg ?? "VPN start failed")")')
-              patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN reconnect failed"\)', r'finish failed:\(errMsg ?? "VPN reconnect failed")")')
-              patch("App/SettingsView.swift", r'Run "Set as Location" once', r'Run \"Set as Location\" once')
-          except:
-              pass # Ignore if already fixed
+          # Fix syntax errors in map views (if they still exist)
+          try_patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN start failed"\)', r'finish failed:\(errMsg ?? "VPN start failed")")')
+          try_patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN reconnect failed"\)', r'finish failed:\(errMsg ?? "VPN reconnect failed")")')
+          try_patch("App/SettingsView.swift", r'Run "Set as Location" once', r'Run \"Set as Location\" once')
           
           # Pass coords via memory to bypass sandbox
           patch("App/MapHomeView.swift", 
               r"try manager\.connection\.startVPNTunnel\(\)", 
-              r"let opts: [String: NSObject] = [\"lat\": NSNumber(value: expectedLat), \"lon\": NSNumber(value: expectedLon)]; try manager.connection.startVPNTunnel(options: opts)")
+              'let opts: [String: NSObject] = ["lat": NSNumber(value: expectedLat), "lon": NSNumber(value: expectedLon)]; try manager.connection.startVPNTunnel(options: opts)')
           
           # Remove App Group forced-unwrap crash in LocationConfiguration
           patch("App/LocationConfiguration.swift",
               r"guard let defaults = UserDefaults\(suiteName: suiteName\) else \{",
-              r"if false {")
+              'if false {')
           patch("App/LocationConfiguration.swift",
               r"self\.userDefaults = defaults",
-              r"self.userDefaults = UserDefaults.standard")
+              'self.userDefaults = UserDefaults.standard')
           
           # Remove App Group forced-unwrap crash in GoSpoofer
           patch("Tunnel/GoLocationSpoofer.swift",
-              r"let userDefaults = UserDefaults\(suiteName: \"group\.dev\.duti\.location-spoofer\"\)\!",
-              r"let userDefaults = UserDefaults.standard")
+              r'let userDefaults = UserDefaults\(suiteName: "group\.dev\.duti\.location-spoofer"\)!',
+              'let userDefaults = UserDefaults.standard')
           
           # Read coords from memory
+          packet_tunnel_repl = """var lat = configuration.currentCoordinates?.latitude
+        var lon = configuration.currentCoordinates?.longitude
+        if let opts = options, let oLat = opts["lat"] as? NSNumber, let oLon = opts["lon"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }"""
+          
           patch("Tunnel/PacketTunnelProvider.swift",
               r"let coords = configuration\.currentCoordinates\s+let lat = coords\?\.latitude\s+let lon = coords\?\.longitude",
-              r"var lat = configuration.currentCoordinates?.latitude\n        var lon = configuration.currentCoordinates?.longitude\n        if let opts = options, let oLat = opts[\"lat\"] as? NSNumber, let oLon = opts[\"lon\"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }")
+              packet_tunnel_repl)
           EOF
           python3 patch.py
 
