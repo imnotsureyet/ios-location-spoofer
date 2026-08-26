@@ -84,8 +84,8 @@ jobs:
           
           # Force close Go listener on stop to free port 8888 for the next rapid restart!
           patch("GoSpoofer/main.go",
-              r"var \(\n\tglobalCACert \*tls\.Certificate",
-              "var (\n\tglobalListener net.Listener\n\tglobalCACert *tls.Certificate")
+              r"var globalCACert \*tls\.Certificate",
+              "var globalListener net.Listener\nvar globalCACert *tls.Certificate")
           
           patch("GoSpoofer/main.go",
               r"listener, err := net\.Listen\(\"tcp\", \"127\.0\.0\.1:8888\"\)",
