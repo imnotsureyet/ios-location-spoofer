@@ -27,10 +27,10 @@ jobs:
           cat << 'EOF' > patch.py
           import re
           
-          def patch(path, pattern, repl):
+          def patch(path, pattern, repl, flags=re.MULTILINE):
               with open(path, 'r', encoding='utf-8') as f:
                   c = f.read()
-              new_c = re.sub(pattern, repl, c, flags=re.MULTILINE)
+              new_c = re.sub(pattern, repl, c, flags=flags)
               if new_c == c:
                   print(f"FAILED to patch {path}: pattern not found!")
                   exit(1)
@@ -38,8 +38,8 @@ jobs:
                   f.write(new_c)
               print(f"Successfully patched {path}")
               
-          def try_patch(path, pattern, repl):
-              try: patch(path, pattern, repl)
+          def try_patch(path, pattern, repl, flags=re.MULTILINE):
+              try: patch(path, pattern, repl, flags)
               except: pass
           
           # Fix syntax errors in map views
@@ -47,15 +47,20 @@ jobs:
           try_patch("App/MapHomeView.swift", r'finish failed:\\\(errMsg \?\? "VPN reconnect failed"\)', r'finish failed:\(errMsg ?? "VPN reconnect failed")")')
           try_patch("App/SettingsView.swift", r'Run "Set as Location" once', r'Run \"Set as Location\" once')
           
-          # Pass coords via memory to bypass sandbox
-          patch("App/MapHomeView.swift", 
-              r"try manager\.connection\.startVPNTunnel\(\)", 
-              'let opts: [String: NSObject] = ["lat": NSNumber(value: expectedLat), "lon": NSNumber(value: expectedLon)]; try manager.connection.startVPNTunnel(options: opts)')
-          
           # Bypass the IPC check since Signulous breaks Apple's IPC entitlement!
           patch("App/MapHomeView.swift",
               r"private func confirmCoordsReady\(expectedLat: Double, expectedLon: Double, timeout: TimeInterval, completion: @escaping \(Bool\) -> Void\) \{",
               r"private func confirmCoordsReady(expectedLat: Double, expectedLon: Double, timeout: TimeInterval, completion: @escaping (Bool) -> Void) {\n        completion(true); return")
+          
+          # Patch CertificateInstaller to use standard UserDefaults instead of broken App Group
+          patch("App/CertificateInstaller.swift",
+              r'self\.userDefaults = UserDefaults\(suiteName: "group\.dev\.duti\.location-spoofer"\)!',
+              'self.userDefaults = UserDefaults.standard')
+          
+          # Pass coords AND certificates via memory to bypass sandbox
+          patch("App/MapHomeView.swift", 
+              r"try manager\.connection\.startVPNTunnel\(\)", 
+              'let cert = UserDefaults.standard.string(forKey: "LOCATIONSPOOFER_CA_Certificate") ?? ""; let key = UserDefaults.standard.string(forKey: "LOCATIONSPOOFER_CA_PrivateKey") ?? ""; let opts: [String: NSObject] = ["lat": NSNumber(value: expectedLat), "lon": NSNumber(value: expectedLon), "cert": cert as NSString, "key": key as NSString]; try manager.connection.startVPNTunnel(options: opts)')
           
           # Remove App Group forced-unwrap crash in LocationConfiguration
           patch("App/LocationConfiguration.swift",
@@ -65,21 +70,34 @@ jobs:
               r"self\.userDefaults = defaults",
               'self.userDefaults = UserDefaults.standard')
           
-          # Remove App Group forced-unwrap crash in GoSpoofer
-          patch("Tunnel/GoLocationSpoofer.swift",
-              r'let userDefaults = UserDefaults\(suiteName: "group\.dev\.duti\.location-spoofer"\)!',
-              'let userDefaults = UserDefaults.standard')
+          # Inject global variables for cert passing in PacketTunnelProvider
+          patch("Tunnel/PacketTunnelProvider.swift",
+              r"class PacketTunnelProvider: NEPacketTunnelProvider \{",
+              "var sharedPassedCert: String? = nil\nvar sharedPassedKey: String? = nil\n\nclass PacketTunnelProvider: NEPacketTunnelProvider {")
           
-          # Read coords from memory
+          # Read coords and certs from memory in PacketTunnelProvider
           packet_tunnel_repl = (
               "var lat = configuration.currentCoordinates?.latitude\n"
               "        var lon = configuration.currentCoordinates?.longitude\n"
-              "        if let opts = options, let oLat = opts[\"lat\"] as? NSNumber, let oLon = opts[\"lon\"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }"
+              "        if let opts = options {\n"
+              "            if let oLat = opts[\"lat\"] as? NSNumber, let oLon = opts[\"lon\"] as? NSNumber { lat = oLat.doubleValue; lon = oLon.doubleValue }\n"
+              "            if let oCert = opts[\"cert\"] as? String { sharedPassedCert = oCert }\n"
+              "            if let oKey = opts[\"key\"] as? String { sharedPassedKey = oKey }\n"
+              "        }"
           )
           
           patch("Tunnel/PacketTunnelProvider.swift",
               r"let coords = configuration\.currentCoordinates\s+let lat = coords\?\.latitude\s+let lon = coords\?\.longitude",
               packet_tunnel_repl)
+          
+          # Patch GoLocationSpoofer to use the passed certificates instead of App Group
+          patch("Tunnel/GoLocationSpoofer.swift",
+              r"private func getStoredCertificates\(\) -> \(cert: String, key: String\)\? \{",
+              "private func getStoredCertificates() -> (cert: String, key: String)? {\n        if let c = sharedPassedCert, let k = sharedPassedKey, !c.isEmpty { return (cert: c, key: k) }")
+          
+          patch("Tunnel/GoLocationSpoofer.swift",
+              r'let userDefaults = UserDefaults\(suiteName: "group\.dev\.duti\.location-spoofer"\)!',
+              'let userDefaults = UserDefaults.standard')
           EOF
           python3 patch.py
 
