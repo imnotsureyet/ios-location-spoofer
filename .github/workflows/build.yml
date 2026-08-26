@@ -52,6 +52,11 @@ jobs:
               r"try manager\.connection\.startVPNTunnel\(\)", 
               'let opts: [String: NSObject] = ["lat": NSNumber(value: expectedLat), "lon": NSNumber(value: expectedLon)]; try manager.connection.startVPNTunnel(options: opts)')
           
+          # Bypass the IPC check since Signulous breaks Apple's IPC entitlement!
+          patch("App/MapHomeView.swift",
+              r"private func confirmCoordsReady\(expectedLat: Double, expectedLon: Double, timeout: TimeInterval, completion: @escaping \(Bool\) -> Void\) \{",
+              r"private func confirmCoordsReady(expectedLat: Double, expectedLon: Double, timeout: TimeInterval, completion: @escaping (Bool) -> Void) {\n        completion(true); return")
+          
           # Remove App Group forced-unwrap crash in LocationConfiguration
           patch("App/LocationConfiguration.swift",
               r"guard let defaults = UserDefaults\(suiteName: suiteName\) else \{",
